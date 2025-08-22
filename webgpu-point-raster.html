@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>WebGPU Point Rasterization</title>
   <style>
-    html, body { height: 100%; margin: 0; background:#222; color:#eee; font-family: Arial; }
-    header { padding: 8px 12px; }
+    body { margin: 5px; font-family: Arial; }
     canvas { border: 1px solid #888; width: 512px; height: 512px; display: block; }
+    table { border-collapse: collapse; }
     .error { padding: 16px; color:#e66; }
   </style>
 </head>
 <body>
-    <header>
+    <p>
       <span>WebGPU point rasterization</span>
       <span id="gpu"></span>
       <div>
@@ -28,8 +28,17 @@
         <span id="sizeLabel">--</span>
       </div>
       <span id="fps">fps: --</span>
-    </header>
+    </p>
     <canvas id="gfx"></canvas>
+    <p>
+    Data gathered so far:
+    <table border="1">
+      <tr><td>System</td><td>Default (4M, 80%)</td><td>4M, 1%</td><td>262K, 1%</td><td>1M, 1%</td><td>16M, 80%</td><td>16M, 1%</td></tr>
+      <tr><td>Apple M4 Max / Chrome</td><td>8.3</td><td>53.3</td><td>8.3</td><td>13.4</td><td>11.1</td><td>265.0</td></tr>
+      <tr><td>iPhone 16 Pro / Safari</td><td>16.6</td><td>95.2</td><td>16.6</td><td>23.5</td><td>56.3</td><td>491.3</td></tr>
+      <tr><td>RTX 3080Ti / Chrome</td><td>16.6</td><td>16.6</td><td>16.6</td><td>16.6</td><td>16.6</td><td>38.5</td></tr>
+    </table>
+    </p>
 
     <script type="module">
       if (!('gpu' in navigator)) {
