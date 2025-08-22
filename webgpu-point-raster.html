@@ -15,10 +15,13 @@
     <header>
       <span>WebGPU point rasterization</span>
       <span id="gpu"></span>
-      <label style="margin-left:12px;">N:
-        <input type="range" id="count" min="16" max="24" value="16" step="1">
+      <label style="margin-left:12px;">Points:
+        <input type="range" id="count" min="18" max="24" value="20" step="1">
       </label>
-      <span id="countLabel" style="margin-left:8px;margin-right:8px;">N=16 (65536 pts)</span>
+      <span id="countLabel" style="margin-left:8px;margin-right:8px;">--</span>
+      <label style="margin-left:12px;">Scale:
+        <input type="range" id="size" min="1" max="100" value="100" step="1">
+      </label>
       <span id="fps">fps: --</span>
     </header>
     <canvas id="gfx"></canvas>
@@ -32,6 +35,7 @@
       const fpsElem = document.getElementById('fps');
       const countSlider = document.getElementById('count');
       const countLabel  = document.getElementById('countLabel');
+      const sizeSlider = document.getElementById('size');
 
       const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
       if (!adapter) throw new Error('No GPU adapter found.');
@@ -57,12 +61,12 @@
       window.addEventListener('resize', configureContext);
 
       const shader = /* wgsl */`
-struct Uniforms { time: f32, aspect: f32, n: f32, pad: f32 };
+struct Uniforms { time: f32, aspect: f32, n: f32, size: f32 };
 @group(0) @binding(0) var<uniform> uni : Uniforms;
 
 struct VSOut {
   @builtin(position) pos : vec4f,
-  @location(0) color : vec3f,
+  @location(0) color : vec4f,
 };
 
 @vertex
@@ -73,21 +77,20 @@ fn vsMain(@builtin(vertex_index) vid : u32) -> VSOut {
   let u : f32 = (f32(i) / f32(max(N,1) - 1u)) * 2.0 - 1.0;
   let v : f32 = (f32(j) / f32(max(N,1) - 1u)) * 2.0 - 1.0;
 
-  // Simple procedural displacement (lissajous-ish waves)
-  let dx = 0.10 * sin(10.0 * u + uni.time) * cos(6.0 * v + uni.time * 1.3);
-  let dy = 0.10 * sin(8.0 * v + uni.time * 0.7) * cos(5.0 * u - uni.time * 0.6);
+  // procedural displacement
+  let dx = 0.02 * sin(10.0 * u + uni.time) * cos(6.0 * v + uni.time * 1.3);
+  let dy = 0.02 * sin(8.0 * v + uni.time * 0.7) * cos(5.0 * u - uni.time * 0.6);
 
   var out : VSOut;
-  out.pos = vec4f((u + dx) / uni.aspect, v + dy, 0.0, 1.0);
-  // Nice cyclic color based on the (wrapped) index
+  out.pos = vec4f(((u + dx) / uni.aspect) * uni.size, (v + dy) * uni.size, 0.0, 1.0);
   let hue = fract((f32(vid) * 0.0008) + uni.time * 0.02);
-  out.color = vec3f(0.6 + 0.4 * cos(6.2831853 * vec3f(hue, hue + 0.33, hue + 0.66)));
+  out.color = vec4f(0.5 + abs(dx)*40, 0.5 + abs(dy)*40, 0.5, 1.0/(log2(uni.n)-8));
   return out;
 }
 
 @fragment
 fn fsMain(in : VSOut) -> @location(0) vec4f {
-  return vec4f(in.color, 1.0);
+  return in.color;
 }
 `;
 
@@ -96,12 +99,19 @@ fn fsMain(in : VSOut) -> @location(0) vec4f {
     const pipeline = device.createRenderPipeline({
       layout: 'auto',
       vertex: { module, entryPoint: 'vsMain' },
-      fragment: { module, entryPoint: 'fsMain', targets: [{ format }] },
+      fragment: { module, entryPoint: 'fsMain',
+        targets: [{
+          format,
+          blend: {
+            color: { srcFactor: 'src-alpha', dstFactor: 'one', operation: 'add' },
+            alpha: { srcFactor: 'src-alpha', dstFactor: 'one', operation: 'add' },
+          },
+        }]
+      },
       primitive: { topology: 'point-list' },
     });
 
-    // Uniforms: [time, aspect, n, pad]
-    const uniformBufferSize = 16;
+    const uniformBufferSize = 16; // 4x f32
     const uniformBuffer = device.createBuffer({
       size: uniformBufferSize,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -113,13 +123,19 @@ fn fsMain(in : VSOut) -> @location(0) vec4f {
     });
 
     // Point count: 2^N points
-    let N = 16;
+    let N = 20;
     function setN(v) {
       N = Math.max(1, Math.floor(v));
-      countLabel.textContent = `N=${N} (${(1<<N).toLocaleString()} pts)`;
+      countLabel.textContent = (1<<N).toLocaleString();
     }
-    setN(16);
+    setN(N);
     countSlider.addEventListener('input', (e) => setN(e.target.value));
+
+    let size = 100.0;
+    function setSize(v) {
+      size = v;
+    }
+    sizeSlider.addEventListener('input', (e) => setSize(e.target.value));
 
     let lastTime = 0;
     let lastUpdate = 0;
@@ -135,7 +151,7 @@ fn fsMain(in : VSOut) -> @location(0) vec4f {
 
       const time = tMS * 0.001; // seconds
       const aspect = canvas.width / canvas.height;
-      const data = new Float32Array([time, aspect, Math.sqrt(1<<N), 0]);
+      const data = new Float32Array([time, aspect, Math.sqrt(1<<N), size / 100.0]);
       device.queue.writeBuffer(uniformBuffer, 0, data.buffer);
 
       const encoder = device.createCommandEncoder();
