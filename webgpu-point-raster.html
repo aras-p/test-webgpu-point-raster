@@ -54,7 +54,14 @@
 
       const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
       if (!adapter) throw new Error('No GPU adapter found.');
-      const device = await adapter.requestDevice();
+
+      const canTimestamp = adapter.features.has('timestamp-query');
+
+      const device = await adapter.requestDevice({
+        requiredFeatures: [
+          ...(canTimestamp ? ['timestamp-query'] : []),
+        ],
+      });      
       const context = canvas.getContext('webgpu');
       const format = navigator.gpu.getPreferredCanvasFormat();
 
@@ -137,6 +144,43 @@ fn fsMain(in : VSOut) -> @location(0) vec4f {
       entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
     });
 
+    // from https://webgpufundamentals.org/webgpu/lessons/webgpu-timing.html
+    const { querySet, resolveBuffer, resultBuffer } = (() => {
+      if (!canTimestamp) {
+        return {};
+      }
+      const querySet = device.createQuerySet({
+         type: 'timestamp',
+         count: 2,
+      });
+      const resolveBuffer = device.createBuffer({
+        size: querySet.count * 8,
+        usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC,
+      });
+      const resultBuffer = device.createBuffer({
+        size: resolveBuffer.size,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+      });
+      return {querySet, resolveBuffer, resultBuffer };
+    })();    
+
+    const renderPassDescriptor = {
+      colorAttachments: [
+        {
+          clearValue: [0.0, 0.0, 0.0, 1],
+          loadOp: 'clear',
+          storeOp: 'store',
+        },
+      ],
+      ...(canTimestamp && {
+        timestampWrites: {
+          querySet,
+          beginningOfPassWriteIndex: 0,
+          endOfPassWriteIndex: 1,
+        },
+      }),
+    };
+
     // Point count: 2^N points
     let N = 22;
     function setN(v) {
@@ -156,6 +200,7 @@ fn fsMain(in : VSOut) -> @location(0) vec4f {
 
     let lastUpdate = 0;
     let updateCount = 0;
+    let gpuTime = 0;
     function frame(tMS) {
       // FPS / time measurement
       updateCount++;
@@ -164,7 +209,11 @@ fn fsMain(in : VSOut) -> @location(0) vec4f {
         lastUpdate = tMS;
         updateCount = 0;
         const fps = dt > 0 ? (1000 / dt).toFixed(1) : '--';
-        fpsElem.textContent = `Time: ${dt.toFixed(1)} ms (${fps} FPS)`;
+        let fpsText = `Time: ${dt.toFixed(1)} ms (${fps} FPS)`;
+        if (canTimestamp) {
+          fpsText += ` GPU ${gpuTime.toFixed(1)} ms`;
+        }
+        fpsElem.textContent = fpsText;
       }
 
       const time = tMS * 0.001; // seconds
@@ -172,21 +221,31 @@ fn fsMain(in : VSOut) -> @location(0) vec4f {
       device.queue.writeBuffer(uniformBuffer, 0, data.buffer);
 
       const encoder = device.createCommandEncoder();
-      const pass = encoder.beginRenderPass({
-        colorAttachments: [{
-          view: context.getCurrentTexture().createView(),
-          loadOp: 'clear',
-          storeOp: 'store',
-          clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1 },
-        }],
-      });
+      renderPassDescriptor.colorAttachments[0].view =
+        context.getCurrentTexture().createView();
+      const pass = encoder.beginRenderPass(renderPassDescriptor);
 
       pass.setPipeline(pipeline);
       pass.setBindGroup(0, bindGroup);
       pass.draw(1 << N);
       pass.end();
 
+      if (canTimestamp) {
+        encoder.resolveQuerySet(querySet, 0, querySet.count, resolveBuffer, 0);
+        if (resultBuffer.mapState === 'unmapped') {
+          encoder.copyBufferToBuffer(resolveBuffer, 0, resultBuffer, 0, resultBuffer.size);
+        }
+      }
+
       device.queue.submit([encoder.finish()]);
+
+      if (canTimestamp && resultBuffer.mapState === 'unmapped') {
+        resultBuffer.mapAsync(GPUMapMode.READ).then(() => {
+          const times = new BigInt64Array(resultBuffer.getMappedRange());
+          gpuTime = Number(times[1] - times[0]) / 1000000;
+          resultBuffer.unmap();
+        });
+      }
       requestAnimationFrame(frame);
     }
 
