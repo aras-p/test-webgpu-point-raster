@@ -14,6 +14,7 @@
 <body>
     <header>
       <span>WebGPU point rasterization</span>
+      <span id="gpu"></span>
       <span id="fps">fps: --</span>
     </header>
     <canvas id="gfx"></canvas>
@@ -30,6 +31,11 @@
       const device = await adapter.requestDevice();
       const context = canvas.getContext('webgpu');
       const format = navigator.gpu.getPreferredCanvasFormat();
+
+      if (adapter.info) {
+        const gpuElem = document.getElementById('gpu');
+        gpuElem.textContent = `GPU: "${adapter.info.vendor} ${adapter.info.architecture} ${adapter.info.device}"`;
+      }
 
       function configureContext() {
         const dpr = Math.max(1, window.devicePixelRatio || 1);
@@ -113,7 +119,7 @@ fn fsMain(in : VSOut) -> @location(0) vec4f {
       if (tMS - lastUpdate > 500) {
         lastUpdate = tMS;
         const fps = dt > 0 ? (1000 / dt).toFixed(1) : '--';
-        fpsElem.textContent = `fps: ${fps} (${dt.toFixed(1)} ms)`;
+        fpsElem.textContent = `Time: ${dt.toFixed(1)} ms (${fps} FPS)`;
       }
 
       const time = tMS * 0.001; // seconds
