@@ -15,6 +15,10 @@
     <header>
       <span>WebGPU point rasterization</span>
       <span id="gpu"></span>
+      <label style="margin-left:12px;">N:
+        <input type="range" id="count" min="16" max="24" value="16" step="1">
+      </label>
+      <span id="countLabel" style="margin-left:8px;margin-right:8px;">N=16 (65536 pts)</span>
       <span id="fps">fps: --</span>
     </header>
     <canvas id="gfx"></canvas>
@@ -26,6 +30,9 @@
       }
       const canvas = document.getElementById('gfx');
       const fpsElem = document.getElementById('fps');
+      const countSlider = document.getElementById('count');
+      const countLabel  = document.getElementById('countLabel');
+
       const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
       if (!adapter) throw new Error('No GPU adapter found.');
       const device = await adapter.requestDevice();
@@ -49,8 +56,6 @@
       configureContext();
       window.addEventListener('resize', configureContext);
 
-      // WGSL shaders: generates an N x N grid of points, then applies simple
-      // time-varying sinusoidal offsets to make it obvious they are re-drawn each frame.
       const shader = /* wgsl */`
 struct Uniforms { time: f32, aspect: f32, n: f32, pad: f32 };
 @group(0) @binding(0) var<uniform> uni : Uniforms;
@@ -107,8 +112,14 @@ fn fsMain(in : VSOut) -> @location(0) vec4f {
       entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
     });
 
-    // Point count: N * N points. 256 -> 65,536 points.
-    const N = 256;
+    // Point count: 2^N points
+    let N = 16;
+    function setN(v) {
+      N = Math.max(1, Math.floor(v));
+      countLabel.textContent = `N=${N} (${(1<<N).toLocaleString()} pts)`;
+    }
+    setN(16);
+    countSlider.addEventListener('input', (e) => setN(e.target.value));
 
     let lastTime = 0;
     let lastUpdate = 0;
@@ -124,7 +135,7 @@ fn fsMain(in : VSOut) -> @location(0) vec4f {
 
       const time = tMS * 0.001; // seconds
       const aspect = canvas.width / canvas.height;
-      const data = new Float32Array([time, aspect, N, 0]);
+      const data = new Float32Array([time, aspect, Math.sqrt(1<<N), 0]);
       device.queue.writeBuffer(uniformBuffer, 0, data.buffer);
 
       const encoder = device.createCommandEncoder();
@@ -133,13 +144,13 @@ fn fsMain(in : VSOut) -> @location(0) vec4f {
           view: context.getCurrentTexture().createView(),
           loadOp: 'clear',
           storeOp: 'store',
-          clearValue: { r: 0.03, g: 0.03, b: 0.06, a: 1 },
+          clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1 },
         }],
       });
 
       pass.setPipeline(pipeline);
       pass.setBindGroup(0, bindGroup);
-      pass.draw(N * N);
+      pass.draw(1 << N);
       pass.end();
 
       device.queue.submit([encoder.finish()]);
