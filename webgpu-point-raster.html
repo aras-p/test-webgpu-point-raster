@@ -16,8 +16,16 @@
       <span>WebGPU point rasterization</span>
       <span id="gpu"></span>
       <div>
+        <button id="btn_1m_80">1M, 80%</button>
+        <button id="btn_4m_80">4M, 80%</button>
+        <button id="btn_16m_80">16M, 80%</button>
+        <button id="btn_1m_1">1M, 1%</button>
+        <button id="btn_4m_1">4M, 1%</button>
+        <button id="btn_16m_1">16M, 1%</button>
+      </div>
+      <div>
         <label">Points:
-          <input type="range" id="count" min="18" max="24" value="22" step="1">
+          <input type="range" id="count" min="18" max="24" value="20" step="1">
         </label>
         <span id="countLabel">--</span>
       </div>
@@ -30,15 +38,6 @@
       <span id="fps">fps: --</span>
     </p>
     <canvas id="gfx"></canvas>
-    <p>
-    Data gathered so far:
-    <table border="1">
-      <tr><td>System</td><td>Default (4M, 80%)</td><td>4M, 1%</td><td>262K, 1%</td><td>1M, 1%</td><td>16M, 80%</td><td>16M, 1%</td></tr>
-      <tr><td>Apple M4 Max / Chrome</td><td>8.3</td><td>53.3</td><td>8.3</td><td>13.4</td><td>11.1</td><td>265.0</td></tr>
-      <tr><td>iPhone 16 Pro / Safari</td><td>16.6</td><td>95.2</td><td>16.6</td><td>23.5</td><td>56.3</td><td>491.3</td></tr>
-      <tr><td>RTX 3080Ti / Chrome</td><td>16.6</td><td>16.6</td><td>16.6</td><td>16.6</td><td>16.6</td><td>38.5</td></tr>
-    </table>
-    </p>
 
     <script type="module">
       if (!('gpu' in navigator)) {
@@ -182,10 +181,11 @@ fn fsMain(in : VSOut) -> @location(0) vec4f {
     };
 
     // Point count: 2^N points
-    let N = 22;
+    let N = 20;
     function setN(v) {
       N = Math.max(1, Math.floor(v));
       countLabel.textContent = (1<<N).toLocaleString();
+      countSlider.value = N;
     }
     setN(N);
     countSlider.addEventListener('input', (e) => setN(e.target.value));
@@ -194,26 +194,38 @@ fn fsMain(in : VSOut) -> @location(0) vec4f {
     function setSize(v) {
       size = v;
       sizeLabel.textContent = size + '%';
+      sizeSlider.value = v;
     }
     setSize(size);
     sizeSlider.addEventListener('input', (e) => setSize(e.target.value));
 
+    document.getElementById('btn_1m_80').addEventListener('click', () => {setN(20); setSize(80);});
+    document.getElementById('btn_4m_80').addEventListener('click', () => {setN(22); setSize(80);});
+    document.getElementById('btn_16m_80').addEventListener('click', () => {setN(24); setSize(80);});
+    document.getElementById('btn_1m_1').addEventListener('click', () => {setN(20); setSize(1);});
+    document.getElementById('btn_4m_1').addEventListener('click', () => {setN(22); setSize(1);});
+    document.getElementById('btn_16m_1').addEventListener('click', () => {setN(24); setSize(1);});
+
     let lastUpdate = 0;
     let updateCount = 0;
     let gpuTime = 0;
+    let gpuTimeCount = 0;
+    let gpuTimeStr = '';
     function frame(tMS) {
       // FPS / time measurement
       updateCount++;
       if (tMS - lastUpdate > 500) {
         const dt = (tMS - lastUpdate) / updateCount;
+        const fps = dt > 0 ? (1000 / dt).toFixed(1) : '--';
+        if (canTimestamp && gpuTimeCount > 0) {
+          gpuTimeStr = ` GPU ${(gpuTime/gpuTimeCount).toFixed(1)} ms`;
+          gpuTime = 0;
+          gpuTimeCount = 0;
+        }
+        let fpsText = `Time: ${dt.toFixed(1)} ms (${fps} FPS) ${gpuTimeStr}`;
+        fpsElem.textContent = fpsText;
         lastUpdate = tMS;
         updateCount = 0;
-        const fps = dt > 0 ? (1000 / dt).toFixed(1) : '--';
-        let fpsText = `Time: ${dt.toFixed(1)} ms (${fps} FPS)`;
-        if (canTimestamp) {
-          fpsText += ` GPU ${gpuTime.toFixed(1)} ms`;
-        }
-        fpsElem.textContent = fpsText;
       }
 
       const time = tMS * 0.001; // seconds
@@ -242,7 +254,8 @@ fn fsMain(in : VSOut) -> @location(0) vec4f {
       if (canTimestamp && resultBuffer.mapState === 'unmapped') {
         resultBuffer.mapAsync(GPUMapMode.READ).then(() => {
           const times = new BigInt64Array(resultBuffer.getMappedRange());
-          gpuTime = Number(times[1] - times[0]) / 1000000;
+          gpuTime += Number(times[1] - times[0]) / 1000000;
+          gpuTimeCount++;
           resultBuffer.unmap();
         });
       }
@@ -251,5 +264,16 @@ fn fsMain(in : VSOut) -> @location(0) vec4f {
 
     requestAnimationFrame(frame);
   </script>
+
+    <p>
+    Data gathered so far:
+    <table border="1">
+      <tr><th>System</th>       <th>1M, 80%</th><th>4M, 80%</th><th>16M, 80%</th><th>1M, 1%</th><th>4M, 1%</th><th>16M, 1%</th></tr>
+      <tr><td>RTX 3080Ti</td>   <td>1.6</td>    <td>5.3</td>    <td>6.5</td>    <td>5.7</td>    <td>9.2</td>  <td>37.7</td></tr>
+      <tr><td>Apple M4 Max</td> <td>2.1</td>    <td>4.4</td>    <td>14.6</td>   <td>21.8</td>   <td>87.4</td> <td>351.0</td></tr>
+      <tr><td>iPhone 16 Pro</td><td>8.4</td>    <td>35.4</td>   <td>66.2</td>   <td>24.7</td>   <td>103.5</td> <td>510.3</td></tr>
+    </table>
+    </p>
+
 </body>
 </html>
