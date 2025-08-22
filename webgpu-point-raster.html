@@ -13,7 +13,8 @@
 </head>
 <body>
     <header>
-      WebGPU point rasterization
+      <span>WebGPU point rasterization</span>
+      <span id="fps">fps: --</span>
     </header>
     <canvas id="gfx"></canvas>
 
@@ -23,6 +24,7 @@
         throw new Error('WebGPU is not supported');
       }
       const canvas = document.getElementById('gfx');
+      const fpsElem = document.getElementById('fps');
       const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
       if (!adapter) throw new Error('No GPU adapter found.');
       const device = await adapter.requestDevice();
@@ -102,7 +104,18 @@ fn fsMain(in : VSOut) -> @location(0) vec4f {
     // Point count: N * N points. 256 -> 65,536 points.
     const N = 256;
 
+    let lastTime = 0;
+    let lastUpdate = 0;
     function frame(tMS) {
+      // FPS / time measurement
+      const dt = tMS - lastTime;
+      lastTime = tMS;
+      if (tMS - lastUpdate > 500) {
+        lastUpdate = tMS;
+        const fps = dt > 0 ? (1000 / dt).toFixed(1) : '--';
+        fpsElem.textContent = `fps: ${fps} (${dt.toFixed(1)} ms)`;
+      }
+
       const time = tMS * 0.001; // seconds
       const aspect = canvas.width / canvas.height;
       const data = new Float32Array([time, aspect, N, 0]);
