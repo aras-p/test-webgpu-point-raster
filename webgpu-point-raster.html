@@ -15,10 +15,11 @@
     <p>
       <span>WebGPU point rasterization</span>
       <span id="gpu"></span>
+      <div id="toggle_compute"><input type="checkbox">Compute shader raster</input></div>
       <div>
-        <button id="btn_1m_80">1M, 80%</button>
-        <button id="btn_4m_80">4M, 80%</button>
-        <button id="btn_16m_80">16M, 80%</button>
+        <button id="btn_1m_90">1M, 90%</button>
+        <button id="btn_4m_90">4M, 90%</button>
+        <button id="btn_16m_90">16M, 90%</button>
         <button id="btn_1m_1">1M, 1%</button>
         <button id="btn_4m_1">4M, 1%</button>
         <button id="btn_16m_1">16M, 1%</button>
@@ -31,7 +32,7 @@
       </div>
       <div>
         <label>Scale:
-          <input type="range" id="size" min="1" max="100" value="80" step="1">
+          <input type="range" id="size" min="1" max="100" value="90" step="1">
         </label>
         <span id="sizeLabel">--</span>
       </div>
@@ -69,6 +70,9 @@
         gpuElem.textContent = `GPU: "${adapter.info.vendor} ${adapter.info.architecture} ${adapter.info.device}"`;
       }
 
+      let computeRaster = false;
+      let bufferR, bufferG, bufferB;
+
       function configureContext() {
         const dpr = Math.max(1, window.devicePixelRatio || 1);
         const w = Math.floor(canvas.clientWidth * dpr);
@@ -77,18 +81,32 @@
           canvas.width = w; canvas.height = h;
         }
         context.configure({ device, format, alphaMode: 'opaque' });
+        const pixelCount = canvas.width * canvas.height;
+        const bufSize = pixelCount * 4;
+        const usage = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST; // COPY_DST needed for clear
+        bufferR = device.createBuffer({ size: bufSize, usage });
+        bufferG = device.createBuffer({ size: bufSize, usage });
+        bufferB = device.createBuffer({ size: bufSize, usage });
       }
       configureContext();
       //window.addEventListener('resize', configureContext);
 
       const shader = /* wgsl */`
-struct Uniforms { time: f32, n: f32, size: f32, pad: f32 };
+struct Uniforms { time: f32, n: f32, size: f32, pad0: f32, width: u32, height: u32, total: u32, pad2: u32 };
 @group(0) @binding(0) var<uniform> uni : Uniforms;
 
 struct VSOut {
   @builtin(position) pos : vec4f,
   @location(0) color : vec4f,
 };
+
+@group(0) @binding(1) var<storage, read_write> R : array<atomic<u32>>;
+@group(0) @binding(2) var<storage, read_write> G : array<atomic<u32>>;
+@group(0) @binding(3) var<storage, read_write> B : array<atomic<u32>>;
+
+@group(0) @binding(4) var<storage, read> Rr : array<u32>;
+@group(0) @binding(5) var<storage, read> Gg : array<u32>;
+@group(0) @binding(6) var<storage, read> Bb : array<u32>;
 
 @vertex
 fn vsMain(@builtin(vertex_index) vid : u32) -> VSOut {
@@ -104,8 +122,7 @@ fn vsMain(@builtin(vertex_index) vid : u32) -> VSOut {
 
   var out : VSOut;
   out.pos = vec4f((u + dx) * uni.size, (v + dy) * uni.size, 0.0, 1.0);
-  let hue = fract((f32(vid) * 0.0008) + uni.time * 0.02);
-  out.color = vec4f(0.5 + abs(dx)*40, 0.5 + abs(dy)*40, 0.5, 1.0/(log2(uni.n)-5));
+  out.color = saturate(vec4f(0.5 + abs(dx)*40, 0.5 + abs(dy)*40, 0.5, 1.0/(log2(uni.n)-5)));
   return out;
 }
 
@@ -113,6 +130,58 @@ fn vsMain(@builtin(vertex_index) vid : u32) -> VSOut {
 fn fsMain(in : VSOut) -> @location(0) vec4f {
   return in.color;
 }
+
+@compute @workgroup_size(16,16)
+fn csMain(@builtin(global_invocation_id) gid : vec3<u32>) {
+  let i : u32 = gid.x;
+  let j : u32 = gid.y;    
+  let N : u32 = u32(uni.n);
+  if (i >= N || j * N + i >= uni.total) { return; }
+  let u : f32 = (f32(i) / f32(max(N,1) - 1u)) * 2.0 - 1.0;
+  let v : f32 = (f32(j) / f32(max(N,1) - 1u)) * 2.0 - 1.0;
+
+  // procedural displacement
+  let dx = 0.02 * sin(10.0 * u + uni.time) * cos(6.0 * v + uni.time * 1.3);
+  let dy = 0.02 * sin(8.0 * v + uni.time * 0.7) * cos(5.0 * u - uni.time * 0.6);
+
+  let x_ndc = (u + dx) * uni.size;
+  let y_ndc = (v + dy) * uni.size;
+  let x_pix = (x_ndc * 0.5 + 0.5) * f32(uni.width);
+  let y_pix = (-y_ndc * 0.5 + 0.5) * f32(uni.height);
+  let x = i32(x_pix);
+  let y = i32(y_pix);
+  if (x < 0 || x >= i32(uni.width) || y < 0 || y >= i32(uni.height)) { return; }
+
+  let idx : u32 = u32(y) * uni.width + u32(x);
+
+  let col : vec4f = saturate(vec4f(0.5 + abs(dx)*40, 0.5 + abs(dy)*40, 0.5, 1.0/(log2(uni.n)-5)));
+  let col_r = u32(col.r * col.a * 255.0 + 0.5);
+  let col_g = u32(col.g * col.a * 255.0 + 0.5);
+  let col_b = u32(col.b * col.a * 255.0 + 0.5);
+  atomicAdd(&R[idx], col_r);
+  atomicAdd(&G[idx], col_g);
+  atomicAdd(&B[idx], col_b);
+}
+
+@vertex
+fn vsResolve(@builtin(vertex_index) vid : u32) -> @builtin(position) vec4f {
+  var p = array<vec2f, 3>(
+    vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0)
+  );
+  return vec4f(p[vid], 0.0, 1.0);
+}
+
+@fragment
+fn fsResolve(@builtin(position) fragCoord : vec4f) -> @location(0) vec4f {
+  let x = u32(clamp(fragCoord.x, 0.0, f32(uni.width - 1u)));
+  let y = u32(clamp(fragCoord.y, 0.0, f32(uni.height - 1u)));
+  let idx = y * uni.width + x;
+
+  let r = f32(Rr[idx]) / 255.0;
+  let g = f32(Gg[idx]) / 255.0;
+  let b = f32(Bb[idx]) / 255.0;
+  return vec4f(r, g, b, 1.0);
+}        
 `;
 
     const module = device.createShaderModule({ code: shader });
@@ -131,8 +200,17 @@ fn fsMain(in : VSOut) -> @location(0) vec4f {
       },
       primitive: { topology: 'point-list' },
     });
+    const pipelineCs = device.createComputePipeline({
+      layout: 'auto',
+      compute: { module, entryPoint: 'csMain' }
+    });
+    const pipelineResolve = device.createRenderPipeline({
+      layout: 'auto',
+      vertex:   { module, entryPoint: 'vsResolve' },
+      fragment: { module, entryPoint: 'fsResolve', targets: [{ format }] },
+    });
 
-    const uniformBufferSize = 16; // 4x f32
+    const uniformBufferSize = 32; // 4x f32 + 4x u32
     const uniformBuffer = device.createBuffer({
       size: uniformBufferSize,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -142,6 +220,24 @@ fn fsMain(in : VSOut) -> @location(0) vec4f {
       layout: pipeline.getBindGroupLayout(0),
       entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
     });
+    const bindGroupCs = device.createBindGroup({
+      layout: pipelineCs.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: uniformBuffer } },
+        { binding: 1, resource: { buffer: bufferR } },
+        { binding: 2, resource: { buffer: bufferG } },
+        { binding: 3, resource: { buffer: bufferB } },
+      ],
+    });
+    const bindGroupResolve = device.createBindGroup({
+      layout: pipelineResolve.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: uniformBuffer } },
+        { binding: 4, resource: { buffer: bufferR } },
+        { binding: 5, resource: { buffer: bufferG } },
+        { binding: 6, resource: { buffer: bufferB } },
+      ],
+    });
 
     // from https://webgpufundamentals.org/webgpu/lessons/webgpu-timing.html
     const { querySet, resolveBuffer, resultBuffer } = (() => {
@@ -150,7 +246,7 @@ fn fsMain(in : VSOut) -> @location(0) vec4f {
       }
       const querySet = device.createQuerySet({
          type: 'timestamp',
-         count: 2,
+         count: 4, // two passes, two timestamps per pass
       });
       const resolveBuffer = device.createBuffer({
         size: querySet.count * 8,
@@ -179,6 +275,15 @@ fn fsMain(in : VSOut) -> @location(0) vec4f {
         },
       }),
     };
+    const computePassDescriptor = {
+      ...(canTimestamp && {
+        timestampWrites: {
+          querySet,
+          beginningOfPassWriteIndex: 2,
+          endOfPassWriteIndex: 3,
+        },
+      }),
+    };
 
     // Point count: 2^N points
     let N = 20;
@@ -190,7 +295,7 @@ fn fsMain(in : VSOut) -> @location(0) vec4f {
     setN(N);
     countSlider.addEventListener('input', (e) => setN(e.target.value));
 
-    let size = 80.0;
+    let size = 90.0;
     function setSize(v) {
       size = v;
       sizeLabel.textContent = size + '%';
@@ -199,12 +304,13 @@ fn fsMain(in : VSOut) -> @location(0) vec4f {
     setSize(size);
     sizeSlider.addEventListener('input', (e) => setSize(e.target.value));
 
-    document.getElementById('btn_1m_80').addEventListener('click', () => {setN(20); setSize(80);});
-    document.getElementById('btn_4m_80').addEventListener('click', () => {setN(22); setSize(80);});
-    document.getElementById('btn_16m_80').addEventListener('click', () => {setN(24); setSize(80);});
+    document.getElementById('btn_1m_90').addEventListener('click', () => {setN(20); setSize(90);});
+    document.getElementById('btn_4m_90').addEventListener('click', () => {setN(22); setSize(90);});
+    document.getElementById('btn_16m_90').addEventListener('click', () => {setN(24); setSize(90);});
     document.getElementById('btn_1m_1').addEventListener('click', () => {setN(20); setSize(1);});
     document.getElementById('btn_4m_1').addEventListener('click', () => {setN(22); setSize(1);});
     document.getElementById('btn_16m_1').addEventListener('click', () => {setN(24); setSize(1);});
+    document.getElementById('toggle_compute').addEventListener('change', (e) => { computeRaster = e.target.checked; });
 
     let lastUpdate = 0;
     let updateCount = 0;
@@ -229,18 +335,44 @@ fn fsMain(in : VSOut) -> @location(0) vec4f {
       }
 
       const time = tMS * 0.001; // seconds
-      const data = new Float32Array([time, Math.sqrt(1<<N), size / 100.0, 0.0]);
-      device.queue.writeBuffer(uniformBuffer, 0, data.buffer);
+      device.queue.writeBuffer(uniformBuffer, 0, new Float32Array([time, Math.sqrt(1<<N), size / 100.0, 0.0]));
+      device.queue.writeBuffer(uniformBuffer, 16, new Uint32Array([canvas.width, canvas.height, 1<<N, 0]));
 
       const encoder = device.createCommandEncoder();
+
       renderPassDescriptor.colorAttachments[0].view =
         context.getCurrentTexture().createView();
-      const pass = encoder.beginRenderPass(renderPassDescriptor);
 
-      pass.setPipeline(pipeline);
-      pass.setBindGroup(0, bindGroup);
-      pass.draw(1 << N);
-      pass.end();
+      if (computeRaster) {
+        // clear buffers
+        encoder.clearBuffer(bufferR);
+        encoder.clearBuffer(bufferG);
+        encoder.clearBuffer(bufferB);
+
+        // dispatch compute raster
+        const cpass = encoder.beginComputePass(computePassDescriptor);
+        cpass.setPipeline(pipelineCs);
+        cpass.setBindGroup(0, bindGroupCs);
+        const cols = Math.floor(Math.sqrt(1<<N));
+        const rows = (1<<N) / cols;
+        cpass.dispatchWorkgroups(Math.ceil(cols / 16), Math.ceil(rows / 16));
+        cpass.end();
+
+        // resolve to screen
+        const pass = encoder.beginRenderPass(renderPassDescriptor);
+        pass.setPipeline(pipelineResolve);
+        pass.setBindGroup(0, bindGroupResolve);
+        pass.draw(3); // fullscreen triangle
+        pass.end();
+      }
+      else {
+        // regular point raster
+        const pass = encoder.beginRenderPass(renderPassDescriptor);
+        pass.setPipeline(pipeline);
+        pass.setBindGroup(0, bindGroup);
+        pass.draw(1 << N);
+        pass.end();
+      }
 
       if (canTimestamp) {
         encoder.resolveQuerySet(querySet, 0, querySet.count, resolveBuffer, 0);
@@ -255,6 +387,9 @@ fn fsMain(in : VSOut) -> @location(0) vec4f {
         resultBuffer.mapAsync(GPUMapMode.READ).then(() => {
           const times = new BigInt64Array(resultBuffer.getMappedRange());
           gpuTime += Number(times[1] - times[0]) / 1000000;
+          if (computeRaster) {
+            gpuTime += Number(times[3] - times[2]) / 1000000;
+          }
           gpuTimeCount++;
           resultBuffer.unmap();
         });
@@ -268,7 +403,7 @@ fn fsMain(in : VSOut) -> @location(0) vec4f {
     <p>
     Data gathered so far:
     <table border="1">
-      <tr><th>System</th>       <th>1M, 80%</th><th>4M, 80%</th><th>16M, 80%</th><th>1M, 1%</th><th>4M, 1%</th><th>16M, 1%</th></tr>
+      <tr><th>System</th>       <th>1M, 90%</th><th>4M, 90%</th><th>16M, 90%</th><th>1M, 1%</th><th>4M, 1%</th><th>16M, 1%</th></tr>
       <tr><td>RTX 3080Ti</td>   <td>1.6</td>    <td>5.3</td>    <td>6.5</td>    <td>5.7</td>    <td>9.2</td>  <td>37.7</td></tr>
       <tr><td>Apple M4 Max</td> <td>2.1</td>    <td>4.4</td>    <td>14.6</td>   <td>21.8</td>   <td>87.4</td> <td>351.0</td></tr>
       <tr><td>iPhone 16 Pro</td><td>8.4</td>    <td>35.4</td>   <td>66.2</td>   <td>24.7</td>   <td>103.5</td> <td>510.3</td></tr>
