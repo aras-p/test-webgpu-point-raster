@@ -437,20 +437,45 @@ fn fsResolve(@builtin(position) fragCoord : vec4f) -> @location(0) vec4f {
       <tr><td>RTX 3080Ti</td>   <td>1.3 / 0.8</td><td>5.3 / 3.1</td><td>6.4 / 5.3</td>  <td>5.7 / 2.3</td>  <td>9.2 / 3.9</td>  <td>37.7 / 6.2</td></tr>
       <tr><td>RTX 4070 laptop</td><td>2.9 / 0.3</td><td>5.9 / 3.3</td><td>10.3 / 6.5</td>  <td>10.0 / 1.2</td>  <td>12.6 / 5.0</td>  <td>33.7 / 14.1</td></tr>
       <tr><td>RTX 4060</td>     <td>6.8 / 1.9</td><td>8.4 / 6.8</td><td>10.0 / 6.1</td>  <td>8.5 / 2.9</td>  <td>7.0 / 6.9</td>  <td>28.2 / 7.5</td></tr>
+      <tr><td>RTX 2060</td>     <td>0.9 / 0.2</td><td>4.7 / 0.9</td><td>15.5 / 4.6</td>  <td>4.7 / 1.7</td>  <td>10.1 / 2.5</td>  <td>41.6 / 7.9</td></tr>
       <tr><td>GTX 1060</td>     <td>1.8 / 0.4</td><td>9.0 / 3.2</td><td>15.7 / 6.1</td>  <td>6.8 / 0.5</td>  <td>10.4 / 2.6</td>  <td>41.9 / 8.9</td></tr>
+      <tr><th colspan="7" class="center">AMD</th></tr>
+      <tr><td>RX 9070 XT</td>   <td>0.2 / 0.0</td><td>1.7 / 0.1</td><td>7.3 / 0.7</td>  <td>3.8 / 0.4</td>  <td>15.0 / 2.1</td>  <td>60.9 / 7.4</td></tr>
+      <tr><td>RX 9070</td>      <td>0.6 / 0.0</td><td>2.6 / 0.2</td><td>9.0 / 2.1</td>  <td>4.0 / 0.8</td>  <td>15.9 / 2.6</td>  <td>64.0 / 8.0</td></tr>
+      <tr><td>RX 9060 XT</td>   <td>0.8 / 0.1</td><td>3.3 / 0.3</td><td>13.3 / 1.9</td>  <td>4.6 / 1.2</td>  <td>14.4 / 2.4</td>  <td>58.2 / 9.8</td></tr>
       <tr><th colspan="7" class="center">Apple</th></tr>
       <tr><td>M4 Max</td> <td>1.7 / 0.2</td><td>4.5 / 0.8</td><td>12.4 / 4.8</td> <td>21.8 / 2.5</td> <td>87.4 / 10.2</td><td>351.0 / 15.2</td></tr>
       <tr><td>M1 Max</td> <td>1.3 / 0.5</td><td>4.9 / 2.9</td><td>11.1 / 10.8</td> <td>15.6 / 2.9</td> <td>62.5 / 10.2</td><td>250.3 / 28.0</td></tr>
       <tr><td>M3</td>     <td>2.9 / 1.0</td><td>5.1 / 2.3</td><td>23.1 / 8.0</td>  <td>22.0 / 4.1</td> <td>89.0 / 8.4</td><td>340.3 / 20.5</td></tr>
-      <tr><td>A18 Pro (iPhone 16 Pro)</td><td>10.5 / 6.6</td><td>13.1 / 10.4</td><td>61.5 / 15.8</td> <td>33.8 / 18.9</td> <td>102.5 / 17.1</td><td>432.7 / 55.4</td></tr>
+      <tr><td>A18 Pro</td><td>10.5 / 6.6</td><td>13.1 / 10.4</td><td>61.5 / 15.8</td> <td>33.8 / 18.9</td> <td>102.5 / 17.1</td><td>432.7 / 55.4</td></tr>
+      <tr><td>A17 Pro</td><td>6.8 / 5.2</td> <td>14.2 / 7.7</td> <td>67.2 / 20.5</td> <td>29.1 / 12.2</td> <td>110.0 / 22.5</td><td>470.0 / 64.8</td></tr>
       <tr><th colspan="7" class="center">Intel</th></tr>
       <tr><td>Iris Xe</td><td>4.4 / 3.6</td><td>12.5 / 10.6</td><td>68.4 / 35.3</td> <td>12.9 / 11.1</td> <td>44.7 / 22.8</td><td>228.3 / 119.2</td></tr>
+      <tr><td>gen-12lp</td><td>3.1 / 6.3</td><td>24.2 / 12.8</td><td>156.0 / 78.2</td> <td>15.4 / 12.6</td> <td>70.0 / 49.8</td><td>280.0 / 199.0</td></tr>
+      <tr><td>UHD 730</td><td>8.1 / 5.5</td><td>47.5 / 22.5</td><td>200.0 / 116.5</td> <td>18.8 / 5.7</td> <td>47.7 / 21.7</td><td>330.0 / 36.5</td></tr>
       <tr><th colspan="7" class="center">ARM</th></tr>
-      <tr><td>Mali-G78 MP20 (Pixel 6)</td><td>6.8 / 2.0</td><td>13.8 / 6.5</td><td>7.1 / 11.5</td> <td>102.6 / 7.7</td> <td>452.2 / 15.8</td><td>? / ?</td></tr>
+      <tr><td>Mali-G78 MP20 (Pixel 6)</td> <td>6.8 / 2.0</td><td>13.8 / 6.5</td><td>57.1 / 11.5</td> <td>102.6 / 7.7</td> <td>452.2 / 15.8</td><td>? / ?</td></tr>
+      <tr><td>Mali-G710 MP7 (Pixel 7a)</td><td>10.2 / 7.3</td><td>18.2 / 9.0</td><td>69.7 / 13.7</td> <td>14.5 / 8.0</td> <td>78.2 / 13.0</td><td>394.0 / 52.8</td></tr>
     </table>    
     </p>
     <p>
-    Thanks to Robin van Ee, Jak Boulton, Andrew Willmott, Marcel Wiessler, @Geegaz, @Professor_Stevens, @vfig for providing some of the above results!
+    Thanks to:
+    Andrew Willmott,
+    Arseny Kapoulkine,
+    Brandon Jones,
+    @Geegaz,
+    @horenmar,
+    Jak Boulton,
+    Javier Arevalo,
+    Marcel Wiessler,
+    @NohatCoder,
+    @Professor_Stevens,
+    Robin van Ee,
+    @rokups,
+    Simon Rolfmore,
+    Steve Anichini,
+    @vfig,
+    for providing some of the above results!
     </p>
 
 </body>
